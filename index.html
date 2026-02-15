@@ -1,0 +1,889 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>WikiMap - Live Wikipedia Edits</title>
+<style>
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+
+  body {
+    background: #0a0e17;
+    color: #c8d6e5;
+    font-family: 'Courier New', monospace;
+    overflow: hidden;
+    height: 100vh;
+    width: 100vw;
+  }
+
+  #globe-container {
+    position: absolute;
+    top: 0; left: 0;
+    width: 100%; height: 100%;
+    z-index: 1;
+  }
+
+  /* Header bar */
+  #header {
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    z-index: 10;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 12px 24px;
+    background: linear-gradient(180deg, rgba(10,14,23,0.95) 0%, rgba(10,14,23,0) 100%);
+    pointer-events: none;
+  }
+
+  #header h1 {
+    font-size: 24px;
+    font-weight: 700;
+    letter-spacing: 2px;
+    color: #fff;
+  }
+
+  #header h1 span {
+    color: #5effa0;
+  }
+
+  #connection-status {
+    font-size: 13px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+  }
+
+  #connection-dot {
+    width: 8px; height: 8px;
+    border-radius: 50%;
+    background: #ff4757;
+    transition: background 0.3s;
+  }
+
+  #connection-dot.connected { background: #5effa0; }
+
+  /* Stats bar */
+  #stats {
+    position: absolute;
+    top: 52px; left: 0; right: 0;
+    z-index: 10;
+    display: flex;
+    gap: 36px;
+    padding: 0 24px;
+    font-size: 13px;
+    pointer-events: none;
+  }
+
+  .stat {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+  }
+
+  .stat-label {
+    color: #576574;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+  }
+
+  .stat-value {
+    font-size: 22px;
+    font-weight: 700;
+    color: #fff;
+  }
+
+  .stat-value.green { color: #5effa0; }
+  .stat-value.blue { color: #54a0ff; }
+  .stat-value.orange { color: #ffa502; }
+  .stat-value.pink { color: #ff6b81; }
+
+  /* Bottom panel */
+  #bottom-panel {
+    position: absolute;
+    bottom: 0; left: 0; right: 0;
+    z-index: 10;
+    background: linear-gradient(0deg, rgba(10,14,23,0.95) 0%, rgba(10,14,23,0.85) 80%, rgba(10,14,23,0) 100%);
+    padding: 30px 24px 14px;
+  }
+
+  /* Notable edits feed */
+  #notable-feed {
+    display: flex;
+    flex-direction: column;
+    gap: 5px;
+    max-height: 180px;
+    overflow: hidden;
+  }
+
+  #notable-feed-header {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #576574;
+    margin-bottom: 4px;
+  }
+
+  .notable-item {
+    display: block;
+    font-size: 13px;
+    line-height: 1.6;
+    animation: fadeSlideIn 0.4s ease-out;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    opacity: 1;
+    transition: opacity 0.3s ease, background 0.2s ease;
+    text-decoration: none;
+    color: inherit;
+    padding: 2px 6px;
+    margin: 0 -6px;
+    border-radius: 4px;
+    cursor: pointer;
+  }
+
+  .notable-item:hover {
+    background: rgba(255,255,255,0.06);
+    opacity: 1 !important;
+  }
+
+  .notable-item:hover .title {
+    color: #fff;
+  }
+
+  .notable-item.fading { opacity: 0.4; }
+
+  .notable-item .wiki-tag {
+    display: inline-block;
+    min-width: 48px;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    text-align: center;
+    margin-right: 6px;
+  }
+
+  .notable-item .type-badge {
+    display: inline-block;
+    padding: 2px 6px;
+    border-radius: 3px;
+    font-size: 10px;
+    font-weight: 700;
+    margin-right: 6px;
+    background: rgba(255,255,255,0.06);
+    color: #8395a7;
+  }
+
+  .notable-item .title { color: #dfe6e9; }
+  .notable-item .user { color: #576574; margin-left: 8px; }
+
+  .notable-item .size-change {
+    margin-left: 8px;
+    font-weight: 700;
+  }
+
+  .notable-item .size-change.positive { color: #5effa0; }
+  .notable-item .size-change.negative { color: #ff6b81; }
+
+  .notable-item .time-ago {
+    color: #3d4855;
+    margin-left: 8px;
+    font-size: 11px;
+  }
+
+  @keyframes fadeSlideIn {
+    from { opacity: 0; transform: translateY(10px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
+
+  /* Top wikis sidebar */
+  #top-wikis {
+    position: absolute;
+    top: 110px;
+    right: 24px;
+    z-index: 10;
+    width: 260px;
+    pointer-events: none;
+  }
+
+  #top-wikis h3 {
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 1px;
+    color: #576574;
+    margin-bottom: 10px;
+  }
+
+  .wiki-bar {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 6px;
+    font-size: 13px;
+  }
+
+  .wiki-bar-name {
+    min-width: 90px;
+    text-align: right;
+    color: #8395a7;
+  }
+
+  .wiki-bar-track {
+    flex: 1;
+    height: 6px;
+    background: rgba(255,255,255,0.05);
+    border-radius: 3px;
+    overflow: hidden;
+  }
+
+  .wiki-bar-fill {
+    height: 100%;
+    border-radius: 3px;
+    transition: width 0.5s ease;
+  }
+
+  .wiki-bar-count {
+    min-width: 34px;
+    color: #576574;
+    font-size: 12px;
+  }
+</style>
+</head>
+<body>
+
+<div id="globe-container"></div>
+
+<div id="header">
+  <h1>WIKI<span>MAP</span></h1>
+  <div id="connection-status">
+    <div id="connection-dot"></div>
+    <span id="connection-text">Connecting...</span>
+  </div>
+</div>
+
+<div id="stats">
+  <div class="stat">
+    <span class="stat-label">Total Edits</span>
+    <span class="stat-value green" id="stat-total">0</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Edits / min</span>
+    <span class="stat-value blue" id="stat-rate">0</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Humans</span>
+    <span class="stat-value orange" id="stat-humans">0</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Bots</span>
+    <span class="stat-value pink" id="stat-bots">0</span>
+  </div>
+  <div class="stat">
+    <span class="stat-label">Active Wikis</span>
+    <span class="stat-value" id="stat-wikis">0</span>
+  </div>
+</div>
+
+<div id="top-wikis">
+  <h3>Most Active Wikis</h3>
+  <div id="top-wikis-list"></div>
+</div>
+
+<div id="bottom-panel">
+  <div id="notable-feed">
+    <div id="notable-feed-header">Notable edits</div>
+  </div>
+</div>
+
+<script src="https://cdnjs.cloudflare.com/ajax/libs/three.js/r128/three.min.js"></script>
+<script>
+// ─── Wiki language → approximate map coordinates ────────────────────────────
+const WIKI_COORDS = {
+  'en': [-95, 40], 'en-gb': [-1, 52], 'simple': [-95, 40],
+  'de': [10, 51], 'fr': [2, 47], 'es': [-4, 40], 'it': [12, 42],
+  'pt': [-8, 39], 'ru': [37, 56], 'ja': [139, 36], 'zh': [116, 40],
+  'ko': [127, 37], 'ar': [45, 25], 'he': [35, 32], 'hi': [77, 29],
+  'bn': [90, 24], 'ta': [78, 11], 'te': [78, 17], 'ml': [76, 10],
+  'kn': [77, 13], 'mr': [73, 19], 'gu': [72, 23], 'pa': [75, 31],
+  'ur': [73, 31], 'fa': [53, 33], 'tr': [33, 39], 'nl': [5, 52],
+  'sv': [15, 60], 'no': [10, 60], 'da': [10, 56], 'fi': [25, 61],
+  'pl': [20, 52], 'cs': [15, 50], 'sk': [17, 49], 'hu': [19, 47],
+  'ro': [26, 46], 'bg': [24, 43], 'sr': [21, 44], 'hr': [16, 46],
+  'sl': [15, 46], 'uk': [31, 49], 'el': [24, 38], 'th': [101, 14],
+  'vi': [106, 16], 'id': [107, -6], 'ms': [102, 3], 'tl': [121, 14],
+  'ca': [2, 42], 'gl': [-8, 43], 'eu': [-2, 43], 'cy': [-4, 52],
+  'ga': [-8, 53], 'af': [25, -30], 'sw': [37, -1], 'am': [38, 9],
+  'yo': [4, 8], 'ha': [8, 12], 'zu': [30, -28], 'ne': [85, 28],
+  'si': [81, 7], 'km': [105, 12], 'lo': [103, 18], 'my': [96, 17],
+  'ka': [44, 42], 'hy': [44, 40], 'az': [50, 41], 'kk': [67, 48],
+  'uz': [66, 41], 'be': [28, 54], 'lt': [24, 55], 'lv': [24, 57],
+  'et': [25, 59], 'sq': [20, 41], 'mk': [22, 41], 'bs': [18, 44],
+  'is': [-19, 65], 'lb': [6, 50], 'mt': [14, 36], 'mn': [107, 48],
+  'commons': [10, 50], 'www.wikidata': [10, 48], 'wikidata': [10, 48],
+  'meta': [0, 45], 'species': [12, 44], 'mediawiki': [-120, 38],
+};
+
+function getWikiLang(serverName) {
+  if (!serverName) return null;
+  const parts = serverName.split('.');
+  if (['wikipedia','wiktionary','wikiquote','wikibooks','wikisource','wikinews','wikiversity','wikivoyage'].includes(parts[1])) {
+    return parts[0];
+  }
+  return parts[0];
+}
+
+function getCoordsForWiki(serverName) {
+  const lang = getWikiLang(serverName);
+  if (!lang) return null;
+  const c = WIKI_COORDS[lang];
+  if (c) {
+    return [c[0] + (Math.random() - 0.5) * 6, c[1] + (Math.random() - 0.5) * 4];
+  }
+  return [(Math.random() - 0.5) * 300, (Math.random() - 0.5) * 120];
+}
+
+// ─── Color helpers ──────────────────────────────────────────────────────────
+function getColor(type) {
+  switch(type) {
+    case 'edit': return [94, 255, 160];
+    case 'new':  return [84, 160, 255];
+    case 'log':  return [255, 165, 2];
+    case 'categorize': return [255, 107, 129];
+    default: return [200, 200, 200];
+  }
+}
+
+function getTagColor(type) {
+  switch(type) {
+    case 'edit': return '#1a3a2a';
+    case 'new':  return '#1a2a3a';
+    case 'log':  return '#3a2a1a';
+    case 'categorize': return '#3a1a2a';
+    default: return '#2a2a2a';
+  }
+}
+
+function getTagTextColor(type) {
+  switch(type) {
+    case 'edit': return '#5effa0';
+    case 'new':  return '#54a0ff';
+    case 'log':  return '#ffa502';
+    case 'categorize': return '#ff6b81';
+    default: return '#aaa';
+  }
+}
+
+// ─── Three.js setup ─────────────────────────────────────────────────────────
+const container = document.getElementById('globe-container');
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, window.innerWidth / window.innerHeight, 0.1, 100);
+camera.position.z = 3.2;
+
+const renderer = new THREE.WebGLRenderer({ antialias: true, alpha: true });
+renderer.setSize(window.innerWidth, window.innerHeight);
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.setClearColor(0x000000, 1);
+container.appendChild(renderer.domElement);
+
+window.addEventListener('resize', () => {
+  camera.aspect = window.innerWidth / window.innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(window.innerWidth, window.innerHeight);
+});
+
+const textureLoader = new THREE.TextureLoader();
+
+// ─── Starfield background ───────────────────────────────────────────────────
+const starGeom = new THREE.SphereGeometry(50, 32, 32);
+const starTex = textureLoader.load('https://cdn.jsdelivr.net/npm/three-globe/example/img/night-sky.png');
+const starMat = new THREE.MeshBasicMaterial({ map: starTex, side: THREE.BackSide });
+scene.add(new THREE.Mesh(starGeom, starMat));
+
+// Globe group (everything that rotates together)
+const globeGroup = new THREE.Group();
+scene.add(globeGroup);
+
+// ─── Globe sphere with Earth imagery ────────────────────────────────────────
+const GLOBE_RADIUS = 1;
+const globeGeom = new THREE.SphereGeometry(GLOBE_RADIUS, 64, 64);
+const earthTex = textureLoader.load('https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-night.jpg');
+const bumpTex = textureLoader.load('https://cdn.jsdelivr.net/npm/three-globe/example/img/earth-topology.png');
+const globeMat = new THREE.MeshPhongMaterial({
+  map: earthTex,
+  bumpMap: bumpTex,
+  bumpScale: 0.02,
+});
+const globe = new THREE.Mesh(globeGeom, globeMat);
+globeGroup.add(globe);
+
+// ─── Lighting ───────────────────────────────────────────────────────────────
+const ambientLight = new THREE.AmbientLight(0x404050, 1.0);
+scene.add(ambientLight);
+const dirLight = new THREE.DirectionalLight(0xffffff, 0.8);
+dirLight.position.set(5, 3, 5);
+scene.add(dirLight);
+
+// ─── Lat/lon → 3D position ─────────────────────────────────────────────────
+function latLonToVec3(lon, lat, radius) {
+  const phi = (90 - lat) * Math.PI / 180;
+  const theta = (lon + 180) * Math.PI / 180;
+  return new THREE.Vector3(
+    -radius * Math.sin(phi) * Math.cos(theta),
+    radius * Math.cos(phi),
+    radius * Math.sin(phi) * Math.sin(theta)
+  );
+}
+
+// ─── Atmosphere glow ────────────────────────────────────────────────────────
+const atmosVert = `
+  varying vec3 vNormal;
+  void main() {
+    vNormal = normalize(normalMatrix * normal);
+    gl_Position = projectionMatrix * modelViewMatrix * vec4(position, 1.0);
+  }
+`;
+const atmosFrag = `
+  varying vec3 vNormal;
+  void main() {
+    float intensity = pow(0.62 - dot(vNormal, vec3(0.0, 0.0, 1.0)), 2.5);
+    gl_FragColor = vec4(0.3, 0.6, 1.0, intensity * 0.5);
+  }
+`;
+const atmosGeom = new THREE.SphereGeometry(GLOBE_RADIUS * 1.12, 64, 64);
+const atmosMat = new THREE.ShaderMaterial({
+  vertexShader: atmosVert,
+  fragmentShader: atmosFrag,
+  blending: THREE.AdditiveBlending,
+  side: THREE.BackSide,
+  transparent: true,
+});
+const atmosphere = new THREE.Mesh(atmosGeom, atmosMat);
+globeGroup.add(atmosphere);
+
+// ─── Pulse sprite textures (cached per color) ───────────────────────────────
+const spriteTextureCache = {};
+
+function getPulseTexture(r, g, b) {
+  const key = `${r},${g},${b}`;
+  if (spriteTextureCache[key]) return spriteTextureCache[key];
+
+  const size = 64;
+  const canvas = document.createElement('canvas');
+  canvas.width = size;
+  canvas.height = size;
+  const ctx = canvas.getContext('2d');
+
+  const grad = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  grad.addColorStop(0, `rgba(${r},${g},${b},1)`);
+  grad.addColorStop(0.3, `rgba(${r},${g},${b},0.6)`);
+  grad.addColorStop(0.7, `rgba(${r},${g},${b},0.15)`);
+  grad.addColorStop(1, `rgba(${r},${g},${b},0)`);
+  ctx.fillStyle = grad;
+  ctx.fillRect(0, 0, size, size);
+
+  const tex = new THREE.CanvasTexture(canvas);
+  spriteTextureCache[key] = tex;
+  return tex;
+}
+
+// ─── Pulse management ───────────────────────────────────────────────────────
+const MAX_PULSES = 400;
+const pulses = [];
+
+function addPulse(lon, lat, type, isBot, sizeDelta) {
+  const color = getColor(type);
+  const magnitude = Math.min(Math.max(Math.abs(sizeDelta || 0), 5), 2000);
+  const baseScale = (Math.log2(magnitude + 1) * 0.008 + 0.01);
+
+  const tex = getPulseTexture(color[0], color[1], color[2]);
+  const mat = new THREE.SpriteMaterial({
+    map: tex,
+    transparent: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    opacity: isBot ? 0.3 : 0.8,
+  });
+  const sprite = new THREE.Sprite(mat);
+
+  const pos = latLonToVec3(lon, lat, GLOBE_RADIUS + 0.005);
+  sprite.position.copy(pos);
+  sprite.scale.set(0.001, 0.001, 1);
+
+  globeGroup.add(sprite);
+
+  pulses.push({
+    sprite,
+    material: mat,
+    baseScale,
+    maxAlpha: isBot ? 0.3 : 0.8,
+    life: 0,
+    maxLife: 120 + Math.random() * 60,
+    position: pos.clone(),
+  });
+
+  // Remove oldest if over limit
+  while (pulses.length > MAX_PULSES) {
+    const old = pulses.shift();
+    globeGroup.remove(old.sprite);
+    old.material.dispose();
+  }
+}
+
+// ─── Mouse drag rotation + zoom ─────────────────────────────────────────────
+let isDragging = false;
+let prevMouse = { x: 0, y: 0 };
+let rotationVelocity = { x: 0, y: 0 };
+let autoRotateSpeed = 0.001; // radians per frame
+let lastInteraction = 0;
+const AUTO_ROTATE_RESUME_DELAY = 2000; // ms after release before auto-rotate resumes
+
+// Zoom state
+let targetZoom = camera.position.z; // 3.2
+const MIN_ZOOM = 1.5;
+const MAX_ZOOM = 8;
+const ZOOM_SPEED = 0.1;
+
+renderer.domElement.addEventListener('mousedown', (e) => {
+  isDragging = true;
+  prevMouse = { x: e.clientX, y: e.clientY };
+  rotationVelocity = { x: 0, y: 0 };
+});
+
+renderer.domElement.addEventListener('mousemove', (e) => {
+  if (!isDragging) return;
+  const dx = e.clientX - prevMouse.x;
+  const dy = e.clientY - prevMouse.y;
+  rotationVelocity = { x: dy * 0.003, y: dx * 0.003 };
+  globeGroup.rotation.y += dx * 0.003;
+  globeGroup.rotation.x += dy * 0.003;
+  globeGroup.rotation.x = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, globeGroup.rotation.x));
+  prevMouse = { x: e.clientX, y: e.clientY };
+});
+
+renderer.domElement.addEventListener('mouseup', () => {
+  isDragging = false;
+  lastInteraction = Date.now();
+});
+
+renderer.domElement.addEventListener('mouseleave', () => {
+  isDragging = false;
+  lastInteraction = Date.now();
+});
+
+// Scroll wheel zoom
+renderer.domElement.addEventListener('wheel', (e) => {
+  e.preventDefault();
+  targetZoom += e.deltaY * 0.003;
+  targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, targetZoom));
+  lastInteraction = Date.now();
+}, { passive: false });
+
+// Touch support
+let prevTouchDist = 0;
+
+renderer.domElement.addEventListener('touchstart', (e) => {
+  if (e.touches.length === 2) {
+    // Pinch start
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    prevTouchDist = Math.sqrt(dx * dx + dy * dy);
+    isDragging = false;
+  } else if (e.touches.length === 1) {
+    isDragging = true;
+    prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+    rotationVelocity = { x: 0, y: 0 };
+  }
+}, { passive: true });
+
+renderer.domElement.addEventListener('touchmove', (e) => {
+  if (e.touches.length === 2) {
+    // Pinch zoom
+    const dx = e.touches[0].clientX - e.touches[1].clientX;
+    const dy = e.touches[0].clientY - e.touches[1].clientY;
+    const dist = Math.sqrt(dx * dx + dy * dy);
+    if (prevTouchDist > 0) {
+      const delta = prevTouchDist - dist;
+      targetZoom += delta * 0.01;
+      targetZoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, targetZoom));
+      lastInteraction = Date.now();
+    }
+    prevTouchDist = dist;
+  } else if (e.touches.length === 1 && isDragging) {
+    const dx = e.touches[0].clientX - prevMouse.x;
+    const dy = e.touches[0].clientY - prevMouse.y;
+    rotationVelocity = { x: dy * 0.003, y: dx * 0.003 };
+    globeGroup.rotation.y += dx * 0.003;
+    globeGroup.rotation.x += dy * 0.003;
+    globeGroup.rotation.x = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, globeGroup.rotation.x));
+    prevMouse = { x: e.touches[0].clientX, y: e.touches[0].clientY };
+  }
+}, { passive: true });
+
+renderer.domElement.addEventListener('touchend', (e) => {
+  if (e.touches.length < 2) prevTouchDist = 0;
+  if (e.touches.length === 0) isDragging = false;
+  lastInteraction = Date.now();
+}, { passive: true });
+
+// ─── Animation loop ─────────────────────────────────────────────────────────
+function animate() {
+  requestAnimationFrame(animate);
+
+  // Auto-rotation (resumes after drag ends)
+  if (!isDragging) {
+    const timeSinceInteraction = Date.now() - lastInteraction;
+    if (timeSinceInteraction > AUTO_ROTATE_RESUME_DELAY) {
+      // Smooth ease-in to auto rotate
+      const easeIn = Math.min((timeSinceInteraction - AUTO_ROTATE_RESUME_DELAY) / 1000, 1);
+      globeGroup.rotation.y += autoRotateSpeed * easeIn;
+      // Slowly ease vertical tilt back toward 0
+      globeGroup.rotation.x *= 0.998;
+    }
+    // Apply inertia from drag
+    if (Math.abs(rotationVelocity.y) > 0.0001) {
+      globeGroup.rotation.y += rotationVelocity.y;
+      rotationVelocity.y *= 0.95;
+    }
+    if (Math.abs(rotationVelocity.x) > 0.0001) {
+      globeGroup.rotation.x += rotationVelocity.x;
+      globeGroup.rotation.x = Math.max(-Math.PI / 2.5, Math.min(Math.PI / 2.5, globeGroup.rotation.x));
+      rotationVelocity.x *= 0.95;
+    }
+  }
+
+  // Smooth zoom interpolation
+  camera.position.z += (targetZoom - camera.position.z) * 0.08;
+
+  // Update pulses
+  const camPos = new THREE.Vector3();
+  camera.getWorldPosition(camPos);
+
+  for (let i = pulses.length - 1; i >= 0; i--) {
+    const p = pulses[i];
+    p.life++;
+    const t = p.life / p.maxLife;
+
+    if (t >= 1) {
+      globeGroup.remove(p.sprite);
+      p.material.dispose();
+      pulses.splice(i, 1);
+      continue;
+    }
+
+    // Scale animation: grow quickly then stay
+    const scaleT = Math.min(t * 5, 1);
+    const scale = p.baseScale * scaleT;
+    p.sprite.scale.set(scale, scale, 1);
+
+    // Fade: fade in fast, fade out in second half
+    const fadeIn = Math.min(t * 8, 1);
+    const fadeOut = t > 0.5 ? 1 - (t - 0.5) * 2 : 1;
+    const alpha = p.maxAlpha * fadeIn * fadeOut;
+
+    // Back-face check: hide pulses on the far side
+    const worldPos = new THREE.Vector3();
+    p.sprite.getWorldPosition(worldPos);
+    const dotProduct = worldPos.clone().normalize().dot(camPos.clone().normalize());
+    const visibleAlpha = dotProduct > -0.1 ? alpha : 0;
+
+    p.material.opacity = visibleAlpha;
+  }
+
+  renderer.render(scene, camera);
+}
+
+animate();
+
+// ─── Stats tracking ─────────────────────────────────────────────────────────
+let totalEdits = 0;
+let humanEdits = 0;
+let botEdits = 0;
+const wikiCounts = {};
+const recentTimestamps = [];
+
+function updateStats() {
+  document.getElementById('stat-total').textContent = totalEdits.toLocaleString();
+  document.getElementById('stat-humans').textContent = humanEdits.toLocaleString();
+  document.getElementById('stat-bots').textContent = botEdits.toLocaleString();
+  document.getElementById('stat-wikis').textContent = Object.keys(wikiCounts).length;
+
+  const now = Date.now();
+  while (recentTimestamps.length && recentTimestamps[0] < now - 60000) {
+    recentTimestamps.shift();
+  }
+  document.getElementById('stat-rate').textContent = recentTimestamps.length;
+
+  const sorted = Object.entries(wikiCounts).sort((a, b) => b[1] - a[1]).slice(0, 8);
+  const maxCount = sorted.length ? sorted[0][1] : 1;
+  const barColors = ['#5effa0', '#54a0ff', '#ffa502', '#ff6b81', '#a29bfe', '#fd79a8', '#00cec9', '#fdcb6e'];
+
+  const listEl = document.getElementById('top-wikis-list');
+  listEl.innerHTML = sorted.map(([wiki, count], i) => `
+    <div class="wiki-bar">
+      <span class="wiki-bar-name">${wiki}</span>
+      <div class="wiki-bar-track">
+        <div class="wiki-bar-fill" style="width:${(count / maxCount) * 100}%; background:${barColors[i % barColors.length]}"></div>
+      </div>
+      <span class="wiki-bar-count">${count}</span>
+    </div>
+  `).join('');
+}
+
+setInterval(updateStats, 500);
+
+// ─── Notable edits feed ─────────────────────────────────────────────────────
+const MAX_NOTABLE = 5;
+const NOTABLE_LIFETIME = 30000; // 30 seconds before fading
+const notableFeed = document.getElementById('notable-feed');
+const notableItems = []; // {el, ts}
+
+function isNotable(data) {
+  // Skip bots
+  if (data.bot) return false;
+  // Skip log actions (blocks, deletions, etc.)
+  if (data.type === 'log' || data.type === 'categorize') return false;
+  // Skip Wikidata (Q-code items, not human-readable)
+  if (data.server_name && data.server_name.includes('wikidata.org')) return false;
+  // Skip Commons file uploads/edits
+  if (data.server_name && data.server_name.includes('commons.wikimedia.org')) return false;
+  // Skip non-article namespaces (User:, Talk:, Wikipedia:, File:, etc.)
+  // Namespace 0 = main article namespace
+  if (data.namespace !== 0) return false;
+  // Skip titles that look like codes (Q######)
+  if (data.title && /^Q\d+$/.test(data.title)) return false;
+
+  // New article creation on a real wiki
+  if (data.type === 'new') return true;
+  // Substantial edits (>300 bytes change)
+  if (data.length && data.length.new != null && data.length.old != null) {
+    if (Math.abs(data.length.new - data.length.old) > 300) return true;
+  }
+  return false;
+}
+
+function addNotableItem(data) {
+  const type = data.type || 'edit';
+  const wiki = getWikiLang(data.server_name) || data.wiki || '?';
+  const title = data.title || '';
+  const user = data.user || '';
+  const sizeDelta = (data.length && data.length.new != null && data.length.old != null)
+    ? data.length.new - data.length.old : null;
+
+  const sizeStr = sizeDelta !== null
+    ? `<span class="size-change ${sizeDelta >= 0 ? 'positive' : 'negative'}">${sizeDelta >= 0 ? '+' : ''}${sizeDelta}</span>`
+    : '';
+
+  const typeBadge = type === 'new'
+    ? '<span class="type-badge" style="background:rgba(84,160,255,0.15);color:#54a0ff">NEW</span>'
+    : '<span class="type-badge" style="background:rgba(94,255,160,0.1);color:#5effa0">EDIT</span>';
+
+  const url = data.title_url || data.meta && data.meta.uri || '#';
+  const el = document.createElement('a');
+  el.className = 'notable-item';
+  el.href = url;
+  el.target = '_blank';
+  el.rel = 'noopener noreferrer';
+  el.innerHTML = `
+    <span class="wiki-tag" style="background:${getTagColor(type)};color:${getTagTextColor(type)}">${escapeHtml(wiki)}</span>
+    ${typeBadge}
+    <span class="title">${escapeHtml(title.slice(0, 65))}</span>
+    <span class="user">by ${escapeHtml(user)}</span>
+    ${sizeStr}
+    <span class="time-ago">just now</span>
+  `;
+
+  notableFeed.appendChild(el);
+  notableItems.push({ el, ts: Date.now() });
+
+  // Remove oldest if over limit
+  while (notableItems.length > MAX_NOTABLE) {
+    const old = notableItems.shift();
+    old.el.remove();
+  }
+}
+
+// Age and fade notable items
+setInterval(() => {
+  const now = Date.now();
+  for (let i = notableItems.length - 1; i >= 0; i--) {
+    const item = notableItems[i];
+    const age = now - item.ts;
+
+    // Update time-ago text
+    const timeEl = item.el.querySelector('.time-ago');
+    if (timeEl) {
+      if (age < 5000) timeEl.textContent = 'just now';
+      else if (age < 60000) timeEl.textContent = Math.floor(age / 1000) + 's ago';
+      else timeEl.textContent = Math.floor(age / 60000) + 'm ago';
+    }
+
+    // Fade old items
+    if (age > NOTABLE_LIFETIME) {
+      item.el.classList.add('fading');
+    }
+
+    // Remove very old items
+    if (age > NOTABLE_LIFETIME * 2) {
+      item.el.remove();
+      notableItems.splice(i, 1);
+    }
+  }
+}, 1000);
+
+function escapeHtml(str) {
+  const div = document.createElement('div');
+  div.textContent = str;
+  return div.innerHTML;
+}
+
+// ─── SSE Connection ─────────────────────────────────────────────────────────
+function connect() {
+  const dot = document.getElementById('connection-dot');
+  const text = document.getElementById('connection-text');
+
+  const es = new EventSource('https://stream.wikimedia.org/v2/stream/recentchange');
+
+  es.onopen = () => {
+    dot.classList.add('connected');
+    text.textContent = 'Live';
+  };
+
+  es.onmessage = (event) => {
+    try {
+      const data = JSON.parse(event.data);
+      totalEdits++;
+      if (data.bot) botEdits++;
+      else humanEdits++;
+      recentTimestamps.push(Date.now());
+
+      const wikiKey = getWikiLang(data.server_name) || data.wiki || 'unknown';
+      wikiCounts[wikiKey] = (wikiCounts[wikiKey] || 0) + 1;
+
+      const coords = getCoordsForWiki(data.server_name);
+      if (coords) {
+        const sizeDelta = (data.length && data.length.new != null && data.length.old != null)
+          ? data.length.new - data.length.old : 0;
+        addPulse(coords[0], coords[1], data.type, data.bot, sizeDelta);
+      }
+
+      // Notable edits only (non-bot, real articles, substantial changes)
+      if (isNotable(data)) {
+        addNotableItem(data);
+      }
+    } catch (e) {
+      // ignore parse errors
+    }
+  };
+
+  es.onerror = () => {
+    dot.classList.remove('connected');
+    text.textContent = 'Reconnecting...';
+  };
+}
+
+connect();
+</script>
+</body>
+</html>
